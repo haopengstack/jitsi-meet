@@ -55,24 +55,24 @@ function _getParticipants(participantsOrGetState) {
  * Returns the URL of the image for the avatar of a particular participant
  * identified by their id and/or e-mail address.
  *
- * @param {string} [participantId] - Participant's id.
  * @param {Object} [options] - The optional arguments.
  * @param {string} [options.avatarId] - Participant's avatar id.
  * @param {string} [options.avatarUrl] - Participant's avatar url.
  * @param {string} [options.email] - Participant's email.
+ * @param {string} [options.participantId] - Participant's id.
  * @returns {string} The URL of the image for the avatar of the participant
  * identified by the specified participantId and/or email.
  *
  * @public
  */
-export function getAvatarURL(participantId, options = {}) {
+export function getAvatarURL(options = {}) {
     // If disableThirdPartyRequests is enabled we shouldn't use third party
     // avatar services, we are returning one of our images.
     if (typeof config === 'object' && config.disableThirdPartyRequests) {
         return 'images/avatar2.png';
     }
 
-    const { avatarId, avatarUrl, email } = options;
+    const { avatarId, avatarUrl, email, participantId } = options;
 
     // If we have avatarUrl we don't need to generate new one.
     if (avatarUrl) {
@@ -92,8 +92,10 @@ export function getAvatarURL(participantId, options = {}) {
     // URL.
     const isEmail = avatarKey && avatarKey.indexOf('@') > 0;
 
+    avatarKey = avatarKey || participantId;
+
     if (!avatarKey) {
-        avatarKey = participantId;
+        return undefined;
     }
 
     avatarKey = MD5.hexdigest(avatarKey.trim().toLowerCase());
