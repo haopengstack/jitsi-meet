@@ -1,34 +1,21 @@
 /* global interfaceConfig */
 
 import React from 'react';
+import { connect } from 'react-redux';
 
 import { translate, translateToHTML } from '../../base/i18n';
 
-import AbstractOverlay from './AbstractOverlay';
+import AbstractUserMediaPermissionsOverlay, { abstractMapStateToProps }
+    from './AbstractUserMediaPermissionsOverlay';
+import OverlayFrame from './OverlayFrame';
 
 /**
  * Implements a React Component for overlay with guidance how to proceed with
  * gUM prompt.
  */
-class UserMediaPermissionsOverlay extends AbstractOverlay {
+class UserMediaPermissionsOverlay extends AbstractUserMediaPermissionsOverlay {
     /**
-     * UserMediaPermissionsOverlay component's property types.
-     *
-     * @static
-     */
-    static propTypes = {
-        /**
-         * The browser which is used currently. The text is different for every
-         * browser.
-         *
-         * @public
-         * @type {string}
-         */
-        browser: React.PropTypes.string
-    }
-
-    /**
-     * Initializes a new SuspendedOverlay instance.
+     * Initializes a new UserMediaPermissionsOverlay instance.
      *
      * @param {Object} props - The read-only properties with which the new
      * instance is to be initialized.
@@ -48,53 +35,49 @@ class UserMediaPermissionsOverlay extends AbstractOverlay {
     }
 
     /**
-     * Constructs overlay body with the message with guidance how to proceed
-     * with gUM prompt.
+     * Implements React's {@link Component#render()}.
      *
-     * @returns {ReactElement|null}
-     * @override
-     * @protected
+     * @inheritdoc
+     * @returns {ReactElement}
      */
-    _renderOverlayContent() {
+    render() {
         const { browser, t } = this.props;
 
         return (
-            <div>
+            <OverlayFrame>
                 <div className = 'inlay'>
                     <span className = 'inlay__icon icon-microphone' />
                     <span className = 'inlay__icon icon-camera' />
                     <h3 className = 'inlay__title'>
                         {
-                            t(
-                                'startupoverlay.title',
+                            t('startupoverlay.title',
                                 { postProcess: 'resolveAppName' })
                         }
                     </h3>
                     <span className = 'inlay__text'>
                         {
-                            translateToHTML(
-                                t,
+                            translateToHTML(t,
                                 `userMedia.${browser}GrantPermissions`)
                         }
                     </span>
                 </div>
                 <div className = 'policy overlay__policy'>
                     <p className = 'policy__text'>
-                        { t('startupoverlay.policyText') }
+                        { translateToHTML(t, 'startupoverlay.policyText') }
                     </p>
                     {
                         this._renderPolicyLogo()
                     }
                 </div>
-            </div>
+            </OverlayFrame>
         );
     }
 
     /**
      * Renders the policy logo.
      *
-     * @returns {ReactElement|null}
      * @private
+     * @returns {ReactElement|null}
      */
     _renderPolicyLogo() {
         const { policyLogoSrc } = this.state;
@@ -111,4 +94,5 @@ class UserMediaPermissionsOverlay extends AbstractOverlay {
     }
 }
 
-export default translate(UserMediaPermissionsOverlay);
+export default translate(
+    connect(abstractMapStateToProps)(UserMediaPermissionsOverlay));

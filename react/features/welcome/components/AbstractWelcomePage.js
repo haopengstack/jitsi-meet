@@ -1,60 +1,85 @@
-import React, { Component } from 'react';
+// @flow
 
+import { Component } from 'react';
+
+import { createWelcomePageEvent, sendAnalytics } from '../../analytics';
 import { appNavigate } from '../../app';
 import { isRoomValid } from '../../base/conference';
-import { VideoTrack } from '../../base/media';
-import { getLocalVideoTrack } from '../../base/tracks';
-import { generateRoomWithoutSeparator } from '../../base/util';
+
+import { generateRoomWithoutSeparator } from '../functions';
+
+/**
+ * {@code AbstractWelcomePage}'s React {@code Component} prop types.
+ */
+type Props = {
+
+    /**
+     * Room name to join to.
+     */
+    _room: string,
+
+    /**
+     * The current settings.
+     */
+    _settings: Object,
+
+    /**
+     * The Redux dispatch Function.
+     */
+    dispatch: Dispatch<*>
+};
 
 /**
  * Base (abstract) class for container component rendering the welcome page.
  *
  * @abstract
  */
-export class AbstractWelcomePage extends Component {
+export class AbstractWelcomePage extends Component<Props, *> {
+    _mounted: ?boolean;
+
     /**
-     * AbstractWelcomePage component's property types.
+     * Implements React's {@link Component#getDerivedStateFromProps()}.
      *
-     * @static
+     * @inheritdoc
      */
-    static propTypes = {
-        _localVideoTrack: React.PropTypes.object,
-        _room: React.PropTypes.string,
-        dispatch: React.PropTypes.func
+    static getDerivedStateFromProps(props: Props, state: Object) {
+        return {
+            room: props._room || state.room
+        };
     }
 
     /**
-     * Initializes a new AbstractWelcomePage instance, including the initial
-     * state of the room name input.
+     * Save room name into component's local state.
      *
-     * @param {Object} props - Component properties.
+     * @type {Object}
+     * @property {number|null} animateTimeoutId - Identifier of the letter
+     * animation timeout.
+     * @property {string} generatedRoomname - Automatically generated room name.
+     * @property {string} room - Room name.
+     * @property {string} roomPlaceholder - Room placeholder that's used as a
+     * placeholder for input.
+     * @property {nubmer|null} updateTimeoutId - Identifier of the timeout
+     * updating the generated room name.
      */
-    constructor(props) {
+    state = {
+        animateTimeoutId: undefined,
+        generatedRoomname: '',
+        joining: false,
+        room: '',
+        roomPlaceholder: '',
+        updateTimeoutId: undefined
+    };
+
+    /**
+     * Initializes a new {@code AbstractWelcomePage} instance.
+     *
+     * @param {Props} props - The React {@code Component} props to initialize
+     * the new {@code AbstractWelcomePage} instance with.
+     */
+    constructor(props: Props) {
         super(props);
 
-        /**
-         * Save room name into component's local state.
-         *
-         * @type {Object}
-         * @property {number|null} animateTimeoutId - Identificator for
-         * letter animation timeout.
-         * @property {string} generatedRoomname - Automatically generated
-         * room name.
-         * @property {string} room - Room name.
-         * @property {string} roomPlaceholder - Room placeholder
-         * that's used as a placeholder for input.
-         * @property {nubmer|null} updateTimeoutId - Identificator for
-         * updating generated room name.
-         */
-        this.state = {
-            animateTimeoutId: null,
-            generatedRoomname: '',
-            room: '',
-            roomPlaceholder: '',
-            updateTimeoutId: null
-        };
-
-        // Bind event handlers so they are only bound once for every instance.
+        // Bind event handlers so they are only bound once per instance.
         this._animateRoomnameChanging
             = this._animateRoomnameChanging.bind(this);
         this._onJoin = this._onJoin.bind(this);
@@ -63,23 +88,27 @@ export class AbstractWelcomePage extends Component {
     }
 
     /**
-     * This method is executed when component receives new properties.
+     * Implements React's {@link Component#componentDidMount()}. Invoked
+     * immediately after mounting occurs.
      *
      * @inheritdoc
-     * @param {Object} nextProps - New props component will receive.
      */
-    componentWillReceiveProps(nextProps) {
-        this.setState({ room: nextProps._room });
+    componentDidMount() {
+        this._mounted = true;
     }
 
     /**
-     * This method is executed when method will be unmounted from DOM.
+     * Implements React's {@link Component#componentWillUnmount()}. Invoked
+     * immediately before this component is unmounted and destroyed.
      *
      * @inheritdoc
      */
     componentWillUnmount() {
         this._clearTimeouts();
+        this._mounted = false;
     }
+
+    _animateRoomnameChanging: (string) => void;
 
     /**
      * Animates the changing of the room name.
@@ -89,20 +118,19 @@ export class AbstractWelcomePage extends Component {
      * @private
      * @returns {void}
      */
-    _animateRoomnameChanging(word) {
-        let animateTimeoutId = null;
+    _animateRoomnameChanging(word: string) {
+        let animateTimeoutId;
         const roomPlaceholder = this.state.roomPlaceholder + word.substr(0, 1);
 
         if (word.length > 1) {
             animateTimeoutId
                 = setTimeout(
-                        () => {
-                            this._animateRoomnameChanging(
-                                    word.substring(1, word.length));
-                        },
-                        70);
+                    () => {
+                        this._animateRoomnameChanging(
+                            word.substring(1, word.length));
+                    },
+                    70);
         }
-
         this.setState({
             animateTimeoutId,
             roomPlaceholder
@@ -121,7 +149,7 @@ export class AbstractWelcomePage extends Component {
     }
 
     /**
-     * Determines whether the 'Join' button is (to be) disabled i.e. there's no
+     * Determines whether the 'Join' button is (to be) disabled i.e. There's no
      * valid room name typed into the respective text input field.
      *
      * @protected
@@ -129,8 +157,10 @@ export class AbstractWelcomePage extends Component {
      * otherwise, false.
      */
     _isJoinDisabled() {
-        return !isRoomValid(this.state.room);
+        return this.state.joining || !isRoomValid(this.state.room);
     }
+
+    _onJoin: () => void;
 
     /**
      * Handles joining. Either by clicking on 'Join' button
@@ -142,10 +172,26 @@ export class AbstractWelcomePage extends Component {
     _onJoin() {
         const room = this.state.room || this.state.generatedRoomname;
 
+        sendAnalytics(
+            createWelcomePageEvent('clicked', 'joinButton', {
+                isGenerated: !this.state.room,
+                room
+            }));
+
         if (room) {
-            this.props.dispatch(appNavigate(room));
+            this.setState({ joining: true });
+
+            // By the time the Promise of appNavigate settles, this component
+            // may have already been unmounted.
+            const onAppNavigateSettled
+                = () => this._mounted && this.setState({ joining: false });
+
+            this.props.dispatch(appNavigate(room))
+                .then(onAppNavigateSettled, onAppNavigateSettled);
         }
     }
+
+    _onRoomChange: (string) => void;
 
     /**
      * Handles 'change' event for the room name text input field.
@@ -155,21 +201,11 @@ export class AbstractWelcomePage extends Component {
      * @protected
      * @returns {void}
      */
-    _onRoomChange(value) {
+    _onRoomChange(value: string) {
         this.setState({ room: value });
     }
 
-    /**
-     * Renders a local video if any.
-     *
-     * @protected
-     * @returns {(ReactElement|null)}
-     */
-    _renderLocalVideo() {
-        return (
-            <VideoTrack videoTrack = { this.props._localVideoTrack } />
-        );
-    }
+    _updateRoomname: () => void;
 
     /**
      * Triggers the generation of a new room name and initiates an animation of
@@ -195,24 +231,19 @@ export class AbstractWelcomePage extends Component {
 }
 
 /**
- * Selects local video track from tracks in state, local participant and room
- * and maps them to component props. It seems it's not possible to 'connect'
- * base component and then extend from it. So we export this function in order
- * to be used in child classes for 'connect'.
+ * Maps (parts of) the redux state to the React {@code Component} props of
+ * {@code AbstractWelcomePage}.
  *
- * @param {Object} state - Redux state.
+ * @param {Object} state - The redux state.
  * @protected
  * @returns {{
- *     _localVideoTrack: (Track|undefined),
- *     _room: string
+ *     _room: string,
+ *     _settings: Object
  * }}
  */
-export function _mapStateToProps(state) {
-    const conference = state['features/base/conference'];
-    const tracks = state['features/base/tracks'];
-
+export function _mapStateToProps(state: Object) {
     return {
-        _localVideoTrack: getLocalVideoTrack(tracks),
-        _room: conference.room
+        _room: state['features/base/conference'].room,
+        _settings: state['features/base/settings']
     };
 }

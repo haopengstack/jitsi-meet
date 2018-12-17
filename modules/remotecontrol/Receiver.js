@@ -1,11 +1,43 @@
-/* global APP, JitsiMeetJS, interfaceConfig */
-const logger = require("jitsi-meet-logger").getLogger(__filename);
-import {DISCO_REMOTE_CONTROL_FEATURE, REMOTE_CONTROL_EVENT_TYPE, EVENT_TYPES,
-    PERMISSIONS_ACTIONS} from "../../service/remotecontrol/Constants";
-import RemoteControlParticipant from "./RemoteControlParticipant";
-import * as JitsiMeetConferenceEvents from '../../ConferenceEvents';
+/* @flow */
 
-const ConferenceEvents = JitsiMeetJS.events.conference;
+import { getLogger } from 'jitsi-meet-logger';
+
+import * as JitsiMeetConferenceEvents from '../../ConferenceEvents';
+import {
+    JitsiConferenceEvents
+} from '../../react/features/base/lib-jitsi-meet';
+import {
+    openRemoteControlAuthorizationDialog
+} from '../../react/features/remote-control';
+import {
+    DISCO_REMOTE_CONTROL_FEATURE,
+    EVENTS,
+    PERMISSIONS_ACTIONS,
+    REMOTE_CONTROL_MESSAGE_NAME,
+    REQUESTS
+} from '../../service/remotecontrol/Constants';
+import * as RemoteControlEvents
+    from '../../service/remotecontrol/RemoteControlEvents';
+import { Transport, PostMessageTransportBackend } from '../transport';
+
+import RemoteControlParticipant from './RemoteControlParticipant';
+
+declare var APP: Object;
+declare var config: Object;
+declare var interfaceConfig: Object;
+
+const logger = getLogger(__filename);
+
+/**
+ * The transport instance used for communication with external apps.
+ *
+ * @type {Transport}
+ */
+const transport = new Transport({
+    backend: new PostMessageTransportBackend({
+        postisOptions: { scope: 'jitsi-remote-control' }
+    })
+});
 
 /**
  * This class represents the receiver party for a remote controller session.
@@ -14,43 +46,63 @@ const ConferenceEvents = JitsiMeetJS.events.conference;
  * and executed.
  */
 export default class Receiver extends RemoteControlParticipant {
+    _controller: ?string;
+    _enabled: boolean;
+    _hangupListener: Function;
+    _remoteControlEventsListener: Function;
+    _userLeftListener: Function;
+
     /**
      * Creates new instance.
-     * @constructor
      */
     constructor() {
         super();
-        this.controller = null;
+        this._controller = null;
         this._remoteControlEventsListener
-            = this._onRemoteControlEvent.bind(this);
+            = this._onRemoteControlMessage.bind(this);
         this._userLeftListener = this._onUserLeft.bind(this);
         this._hangupListener = this._onHangup.bind(this);
+
+        // We expect here that even if we receive the supported event earlier
+        // it will be cached and we'll receive it.
+        transport.on('event', event => {
+            if (event.name === REMOTE_CONTROL_MESSAGE_NAME) {
+                this._onRemoteControlAPIEvent(event);
+
+                return true;
+            }
+
+            return false;
+        });
     }
 
     /**
-     * Enables / Disables the remote control
-     * @param {boolean} enabled the new state.
+     * Enables / Disables the remote control.
+     *
+     * @param {boolean} enabled - The new state.
+     * @returns {void}
      */
-    enable(enabled) {
-        if(this.enabled === enabled) {
+    _enable(enabled: boolean) {
+        if (this._enabled === enabled) {
             return;
         }
-        this.enabled = enabled;
-        if(enabled === true) {
-            logger.log("Remote control receiver enabled.");
+        this._enabled = enabled;
+        if (enabled === true) {
+            logger.log('Remote control receiver enabled.');
+
             // Announce remote control support.
             APP.connection.addFeature(DISCO_REMOTE_CONTROL_FEATURE, true);
             APP.conference.addConferenceListener(
-                ConferenceEvents.ENDPOINT_MESSAGE_RECEIVED,
+                JitsiConferenceEvents.ENDPOINT_MESSAGE_RECEIVED,
                 this._remoteControlEventsListener);
             APP.conference.addListener(JitsiMeetConferenceEvents.BEFORE_HANGUP,
                 this._hangupListener);
         } else {
-            logger.log("Remote control receiver disabled.");
+            logger.log('Remote control receiver disabled.');
             this._stop(true);
             APP.connection.removeFeature(DISCO_REMOTE_CONTROL_FEATURE);
             APP.conference.removeConferenceListener(
-                ConferenceEvents.ENDPOINT_MESSAGE_RECEIVED,
+                JitsiConferenceEvents.ENDPOINT_MESSAGE_RECEIVED,
                 this._remoteControlEventsListener);
             APP.conference.removeListener(
                 JitsiMeetConferenceEvents.BEFORE_HANGUP,
@@ -59,134 +111,221 @@ export default class Receiver extends RemoteControlParticipant {
     }
 
     /**
-     * Removes the listener for ConferenceEvents.ENDPOINT_MESSAGE_RECEIVED
+     * Removes the listener for JitsiConferenceEvents.ENDPOINT_MESSAGE_RECEIVED
      * events. Sends stop message to the wrapper application. Optionally
      * displays dialog for informing the user that remote control session
      * ended.
-     * @param {boolean} dontShowDialog - if true the dialog won't be displayed.
+     *
+     * @param {boolean} [dontNotify] - If true - a notification about stopping
+     * the remote control won't be displayed.
+     * @returns {void}
      */
-    _stop(dontShowDialog = false) {
-        if(!this.controller) {
+    _stop(dontNotify: boolean = false) {
+        if (!this._controller) {
             return;
         }
-        logger.log("Remote control receiver stop.");
-        this.controller = null;
-        APP.conference.removeConferenceListener(ConferenceEvents.USER_LEFT,
+        logger.log('Remote control receiver stop.');
+        this._controller = null;
+        APP.conference.removeConferenceListener(
+            JitsiConferenceEvents.USER_LEFT,
             this._userLeftListener);
-        APP.API.sendRemoteControlEvent({
-            type: EVENT_TYPES.stop
+        transport.sendEvent({
+            name: REMOTE_CONTROL_MESSAGE_NAME,
+            type: EVENTS.stop
         });
-        if(!dontShowDialog) {
-            APP.UI.messageHandler.openMessageDialog(
-                "dialog.remoteControlTitle",
-                "dialog.remoteControlStopMessage"
+        this.emit(RemoteControlEvents.ACTIVE_CHANGED, false);
+        if (!dontNotify) {
+            APP.UI.messageHandler.notify(
+                'dialog.remoteControlTitle',
+                'dialog.remoteControlStopMessage'
             );
         }
     }
 
     /**
-     * Calls this._stop() and sends stop message to the controller participant
+     * Calls this._stop() and sends stop message to the controller participant.
+     *
+     * @returns {void}
      */
     stop() {
-        if(!this.controller) {
+        if (!this._controller) {
             return;
         }
-        this._sendRemoteControlEvent(this.controller, {
-            type: EVENT_TYPES.stop
+        this.sendRemoteControlEndpointMessage(this._controller, {
+            type: EVENTS.stop
         });
         this._stop();
     }
 
     /**
-     * Listens for data channel EndpointMessage events. Handles only events of
-     * type remote control. Sends "remote-control-event" events to the API
-     * module.
-     * @param {JitsiParticipant} participant the controller participant
-     * @param {Object} event EndpointMessage event from the data channels.
-     * @property {string} type property. The function process only events of
-     * type REMOTE_CONTROL_EVENT_TYPE
-     * @property {RemoteControlEvent} event - the remote control event.
+     * Listens for data channel EndpointMessage. Handles only remote control
+     * messages. Sends the remote control messages to the external app that
+     * will execute them.
+     *
+     * @param {JitsiParticipant} participant - The controller participant.
+     * @param {Object} message - EndpointMessage from the data channels.
+     * @param {string} message.name - The function processes only messages with
+     * name REMOTE_CONTROL_MESSAGE_NAME.
+     * @returns {void}
      */
-    _onRemoteControlEvent(participant, event) {
-        if(this.enabled && event.type === REMOTE_CONTROL_EVENT_TYPE) {
-            const remoteControlEvent = event.event;
-            if(this.controller === null
-                && remoteControlEvent.type === EVENT_TYPES.permissions
-                && remoteControlEvent.action === PERMISSIONS_ACTIONS.request) {
-                remoteControlEvent.userId = participant.getId();
-                remoteControlEvent.userJID = participant.getJid();
-                remoteControlEvent.displayName = participant.getDisplayName()
-                    || interfaceConfig.DEFAULT_REMOTE_DISPLAY_NAME;
-                remoteControlEvent.screenSharing
-                    = APP.conference.isSharingScreen;
-            } else if(this.controller !== participant.getId()) {
-                return;
-            } else if(remoteControlEvent.type === EVENT_TYPES.stop) {
-                this._stop();
-                return;
-            }
-            APP.API.sendRemoteControlEvent(remoteControlEvent);
-        } else if(event.type === REMOTE_CONTROL_EVENT_TYPE) {
-            logger.log("Remote control event is ignored because remote "
-                + "control is disabled", event);
+    _onRemoteControlMessage(participant: Object, message: Object) {
+        if (message.name !== REMOTE_CONTROL_MESSAGE_NAME) {
+            return;
+        }
+
+        if (this._enabled) {
+            if (this._controller === null
+                    && message.type === EVENTS.permissions
+                    && message.action === PERMISSIONS_ACTIONS.request) {
+                const userId = participant.getId();
+
+                this.emit(RemoteControlEvents.ACTIVE_CHANGED, true);
+                APP.store.dispatch(
+                    openRemoteControlAuthorizationDialog(userId));
+            } else if (this._controller === participant.getId()) {
+                if (message.type === EVENTS.stop) {
+                    this._stop();
+                } else { // forward the message
+                    transport.sendEvent(message);
+                }
+            } // else ignore
+        } else {
+            logger.log('Remote control message is ignored because remote '
+                + 'control is disabled', message);
         }
     }
 
     /**
-     * Handles remote control permission events received from the API module.
-     * @param {String} userId the user id of the participant related to the
-     * event.
-     * @param {PERMISSIONS_ACTIONS} action the action related to the event.
+     * Denies remote control access for user associated with the passed user id.
+     *
+     * @param {string} userId - The id associated with the user who sent the
+     * request for remote control authorization.
+     * @returns {void}
      */
-    _onRemoteControlPermissionsEvent(userId, action) {
-        if(action === PERMISSIONS_ACTIONS.grant) {
-            APP.conference.addConferenceListener(ConferenceEvents.USER_LEFT,
-                this._userLeftListener);
-            this.controller = userId;
-            logger.log("Remote control permissions granted to: " + userId);
-            if(!APP.conference.isSharingScreen) {
-                APP.conference.toggleScreenSharing();
-                APP.conference.screenSharingPromise.then(() => {
-                    if(APP.conference.isSharingScreen) {
-                        this._sendRemoteControlEvent(userId, {
-                            type: EVENT_TYPES.permissions,
-                            action: action
-                        });
-                    } else {
-                        this._sendRemoteControlEvent(userId, {
-                            type: EVENT_TYPES.permissions,
-                            action: PERMISSIONS_ACTIONS.error
-                        });
-                    }
-                }).catch(() => {
-                    this._sendRemoteControlEvent(userId, {
-                        type: EVENT_TYPES.permissions,
-                        action: PERMISSIONS_ACTIONS.error
-                    });
-                });
-                return;
-            }
-        }
-        this._sendRemoteControlEvent(userId, {
-            type: EVENT_TYPES.permissions,
-            action: action
+    deny(userId: string) {
+        this.emit(RemoteControlEvents.ACTIVE_CHANGED, false);
+        this.sendRemoteControlEndpointMessage(userId, {
+            type: EVENTS.permissions,
+            action: PERMISSIONS_ACTIONS.deny
         });
     }
 
     /**
-     * Calls the stop method if the other side have left.
-     * @param {string} id - the user id for the participant that have left
+     * Grants remote control access to user associated with the passed user id.
+     *
+     * @param {string} userId - The id associated with the user who sent the
+     * request for remote control authorization.
+     * @returns {void}
      */
-    _onUserLeft(id) {
-        if(this.controller === id) {
+    grant(userId: string) {
+        APP.conference.addConferenceListener(JitsiConferenceEvents.USER_LEFT,
+            this._userLeftListener);
+        this._controller = userId;
+        logger.log(`Remote control permissions granted to: ${userId}`);
+
+        let promise;
+
+        if (APP.conference.isSharingScreen
+                && APP.conference.getDesktopSharingSourceType() === 'screen') {
+            promise = this._sendStartRequest();
+        } else {
+            promise = APP.conference.toggleScreenSharing(
+                true,
+                {
+                    desktopSharingSources: [ 'screen' ]
+                })
+                .then(() => this._sendStartRequest());
+        }
+
+        promise
+            .then(() =>
+                this.sendRemoteControlEndpointMessage(userId, {
+                    type: EVENTS.permissions,
+                    action: PERMISSIONS_ACTIONS.grant
+                })
+            )
+            .catch(error => {
+                logger.error(error);
+
+                this.sendRemoteControlEndpointMessage(userId, {
+                    type: EVENTS.permissions,
+                    action: PERMISSIONS_ACTIONS.error
+                });
+
+                APP.UI.messageHandler.notify(
+                    'dialog.remoteControlTitle',
+                    'dialog.startRemoteControlErrorMessage'
+                );
+
+                this._stop(true);
+            });
+    }
+
+    /**
+     * Sends remote control start request.
+     *
+     * @returns {Promise}
+     */
+    _sendStartRequest() {
+        return transport.sendRequest({
+            name: REMOTE_CONTROL_MESSAGE_NAME,
+            type: REQUESTS.start,
+            sourceId: APP.conference.getDesktopSharingSourceId()
+        });
+    }
+
+    /**
+     * Handles remote control events from the external app. Currently only
+     * events with type EVENTS.supported and EVENTS.stop are
+     * supported.
+     *
+     * @param {RemoteControlEvent} event - The remote control event.
+     * @returns {void}
+     */
+    _onRemoteControlAPIEvent(event: Object) {
+        switch (event.type) {
+        case EVENTS.supported:
+            this._onRemoteControlSupported();
+            break;
+        case EVENTS.stop:
+            this.stop();
+            break;
+        }
+    }
+
+    /**
+     * Handles events for support for executing remote control events into
+     * the wrapper application.
+     *
+     * @returns {void}
+     */
+    _onRemoteControlSupported() {
+        logger.log('Remote Control supported.');
+        if (config.disableRemoteControl) {
+            logger.log('Remote Control disabled.');
+        } else {
+            this._enable(true);
+        }
+    }
+
+    /**
+     * Calls the stop method if the other side have left.
+     *
+     * @param {string} id - The user id for the participant that have left.
+     * @returns {void}
+     */
+    _onUserLeft(id: string) {
+        if (this._controller === id) {
             this._stop();
         }
     }
 
     /**
      * Handles hangup events. Disables the receiver.
+     *
+     * @returns {void}
      */
     _onHangup() {
-        this.enable(false);
+        this._enable(false);
     }
 }

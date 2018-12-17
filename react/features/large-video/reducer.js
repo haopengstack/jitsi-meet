@@ -1,7 +1,12 @@
+// @flow
+
 import { PARTICIPANT_ID_CHANGED } from '../base/participants';
 import { ReducerRegistry } from '../base/redux';
 
-import { SELECT_LARGE_VIDEO_PARTICIPANT } from './actionTypes';
+import {
+    SELECT_LARGE_VIDEO_PARTICIPANT,
+    UPDATE_KNOWN_LARGE_VIDEO_RESOLUTION
+} from './actionTypes';
 
 ReducerRegistry.register('features/large-video', (state = {}, action) => {
     switch (action.type) {
@@ -24,6 +29,12 @@ ReducerRegistry.register('features/large-video', (state = {}, action) => {
         return {
             ...state,
             participantId: action.participantId
+        };
+
+    case UPDATE_KNOWN_LARGE_VIDEO_RESOLUTION:
+        return {
+            ...state,
+            resolution: action.resolution
         };
     }
 

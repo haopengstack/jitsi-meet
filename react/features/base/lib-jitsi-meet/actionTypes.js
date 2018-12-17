@@ -1,5 +1,3 @@
-import { Symbol } from '../react';
-
 /**
  * The type of Redux action which signals that {@link JitsiMeetJS} was disposed.
  *
@@ -48,23 +46,3 @@ export const LIB_WILL_DISPOSE = Symbol('LIB_WILL_DISPOSE');
  * }
  */
 export const LIB_WILL_INIT = Symbol('LIB_WILL_INIT');
-
-/**
- * Action to signal that config was set.
- *
- * {
- *     type: SET_CONFIG,
- *     config: Object
- * }
- */
-export const SET_CONFIG = Symbol('SET_CONFIG');
-
-/**
- * The type of Redux action which indicates whether WebRTC is ready.
- *
- * {
- *     type: SET_WEBRTC_READY,
- *     webRTCReady: boolean | Promise
- * }
- */
-export const SET_WEBRTC_READY = Symbol('SET_WEBRTC_READY');

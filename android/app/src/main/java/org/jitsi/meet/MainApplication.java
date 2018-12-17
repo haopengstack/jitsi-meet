@@ -1,64 +1,36 @@
+/*
+ * Copyright @ 2018-present Atlassian Pty Ltd
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.jitsi.meet;
 
 import android.app.Application;
 
-import com.facebook.react.ReactApplication;
-import com.facebook.react.ReactNativeHost;
-import com.facebook.react.ReactPackage;
-import com.facebook.soloader.SoLoader;
+import com.squareup.leakcanary.LeakCanary;
 
-import java.util.Arrays;
-import java.util.List;
-
-public class MainApplication extends Application implements ReactApplication {
-    private final ReactNativeHost mReactNativeHost = new ReactNativeHost(this) {
-        /**
-         * {@inheritDoc}
-         */
-        @Override
-        public boolean getUseDeveloperSupport() {
-            return BuildConfig.DEBUG;
-        }
-
-        /**
-         * {@inheritDoc}
-         */
-        @Override
-        protected List<ReactPackage> getPackages() {
-            return Arrays.<ReactPackage>asList(
-                new com.corbt.keepawake.KCKeepAwakePackage(),
-                new com.facebook.react.shell.MainReactPackage(),
-                new com.oblador.vectoricons.VectorIconsPackage(),
-                new com.ocetnik.timer.BackgroundTimerPackage(),
-                new com.oney.WebRTCModule.WebRTCModulePackage(),
-                new com.rnimmersive.RNImmersivePackage(),
-                new org.jitsi.meet.audiomode.AudioModePackage()
-            );
-        }
-    };
-
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    public ReactNativeHost getReactNativeHost() {
-        return mReactNativeHost;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
+/**
+ * Simple {@link Application} for hooking up LeakCanary:
+ * https://github.com/square/leakcanary
+ */
+public class MainApplication extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
 
-        SoLoader.init(this, /* native exopackage */ false);
-
-        if (!getReactNativeHost()
-                .getReactInstanceManager()
-                    .getDevSupportManager()
-                        .getDevSupportEnabled()) {
-            // TODO Auto-generated method stub
+        if (!LeakCanary.isInAnalyzerProcess(this)) {
+            LeakCanary.install(this);
         }
     }
 }

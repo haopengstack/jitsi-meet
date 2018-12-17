@@ -1,88 +1,99 @@
-/* global APP, config */
-const logger = require("jitsi-meet-logger").getLogger(__filename);
-import Controller from "./Controller";
-import Receiver from "./Receiver";
-import {EVENT_TYPES, DISCO_REMOTE_CONTROL_FEATURE}
-    from "../../service/remotecontrol/Constants";
+/* @flow */
+
+import EventEmitter from 'events';
+import { getLogger } from 'jitsi-meet-logger';
+
+import { DISCO_REMOTE_CONTROL_FEATURE }
+    from '../../service/remotecontrol/Constants';
+import * as RemoteControlEvents
+    from '../../service/remotecontrol/RemoteControlEvents';
+
+import Controller from './Controller';
+import Receiver from './Receiver';
+
+const logger = getLogger(__filename);
+
+declare var APP: Object;
+declare var config: Object;
 
 /**
  * Implements the remote control functionality.
  */
-class RemoteControl {
+class RemoteControl extends EventEmitter {
+    _active: boolean;
+    _initialized: boolean;
+    controller: Controller;
+    receiver: Receiver;
+
     /**
      * Constructs new instance. Creates controller and receiver properties.
-     * @constructor
      */
     constructor() {
+        super();
         this.controller = new Controller();
-        this.receiver = new Receiver();
-        this.enabled = false;
-        this.initialized = false;
+        this._active = false;
+        this._initialized = false;
+
+        this.controller.on(RemoteControlEvents.ACTIVE_CHANGED, active => {
+            this.active = active;
+        });
+    }
+
+    /**
+     * Sets the remote control session active status.
+     *
+     * @param {boolean} isActive - True - if the controller or the receiver is
+     * currently in remote control session and false otherwise.
+     * @returns {void}
+     */
+    set active(isActive: boolean) {
+        this._active = isActive;
+        this.emit(RemoteControlEvents.ACTIVE_CHANGED, isActive);
+    }
+
+    /**
+     * Returns the remote control session active status.
+     *
+     * @returns {boolean} - True - if the controller or the receiver is
+     * currently in remote control session and false otherwise.
+     */
+    get active(): boolean {
+        return this._active;
     }
 
     /**
      * Initializes the remote control - checks if the remote control should be
-     * enabled or not, initializes the API module.
+     * enabled or not.
+     *
+     * @returns {void}
      */
     init() {
-        if(config.disableRemoteControl || this.initialized
-            || !APP.conference.isDesktopSharingEnabled) {
+        if (config.disableRemoteControl
+                || this._initialized
+                || !APP.conference.isDesktopSharingEnabled) {
             return;
         }
-        logger.log("Initializing remote control.");
-        this.initialized = true;
-        APP.API.init({
-            forceEnable: true,
-        });
+        logger.log('Initializing remote control.');
+        this._initialized = true;
         this.controller.enable(true);
-        if(this.enabled) { // supported message came before init.
-            this._onRemoteControlSupported();
-        }
+        this.receiver = new Receiver();
+
+        this.receiver.on(RemoteControlEvents.ACTIVE_CHANGED, active => {
+            this.active = active;
+        });
     }
 
     /**
-     * Handles remote control events from the API module. Currently only events
-     * with type = EVENT_TYPES.supported or EVENT_TYPES.permissions
-     * @param {RemoteControlEvent} event the remote control event.
-     */
-    onRemoteControlAPIEvent(event) {
-        switch(event.type) {
-            case EVENT_TYPES.supported:
-                this._onRemoteControlSupported();
-                break;
-            case EVENT_TYPES.permissions:
-                this.receiver._onRemoteControlPermissionsEvent(
-                    event.userId, event.action);
-                break;
-        }
-    }
-
-    /**
-     * Handles API event for support for executing remote control events into
-     * the wrapper application.
-     */
-    _onRemoteControlSupported() {
-        logger.log("Remote Control supported.");
-        if(!config.disableRemoteControl) {
-            this.enabled = true;
-            if(this.initialized) {
-                this.receiver.enable(true);
-            }
-        } else {
-            logger.log("Remote Control disabled.");
-        }
-    }
-
-    /**
-     * Checks whether the passed user supports remote control or not
-     * @param {JitsiParticipant} user the user to be tested
-     * @returns {Promise<boolean>} the promise will be resolved with true if
+     * Checks whether the passed user supports remote control or not.
+     *
+     * @param {JitsiParticipant} user - The user to be tested.
+     * @returns {Promise<boolean>} The promise will be resolved with true if
      * the user supports remote control and with false if not.
      */
-    checkUserRemoteControlSupport(user) {
-        return user.getFeatures().then(features =>
-            features.has(DISCO_REMOTE_CONTROL_FEATURE), () => false
-        );
+    checkUserRemoteControlSupport(user: Object) {
+        return user.getFeatures().then(
+            features => features.has(DISCO_REMOTE_CONTROL_FEATURE),
+            () => false);
     }
 }
 

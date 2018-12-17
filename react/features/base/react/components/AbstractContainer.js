@@ -1,58 +1,83 @@
+/* @flow */
+
 import React, { Component } from 'react';
 
 /**
- * Abstract (base) class for container of React Component children with a style.
+ * {@code AbstractContainer} component's property types.
+ */
+export type Props = {
+
+    /**
+     * An optional accessibility label to apply to the container root.
+     */
+    accessibilityLabel?: string,
+
+    /**
+     * Whether or not this element is an accessibility element.
+     */
+    accessible?: boolean,
+
+    /**
+     * React Elements to display within the component.
+     */
+    children: React$Node | Object,
+
+    /**
+     * The event handler/listener to be invoked when this
+     * {@code AbstractContainer} is clicked on Web or pressed on React
+     * Native. If {@code onClick} is defined and {@link touchFeedback} is
+     * undefined, {@code touchFeedback} is considered defined as
+     * {@code true}.
+     */
+    onClick?: ?Function,
+
+    /**
+     * The style (as in stylesheet) to be applied to this
+     * {@code AbstractContainer}.
+     */
+    style?: Array<?string> | Object,
+
+    /**
+     * If this instance is to provide visual feedback when touched, then
+     * {@code true}; otherwise, {@code false}. If {@code touchFeedback} is
+     * undefined and {@link onClick} is defined, {@code touchFeedback} is
+     * considered defined as {@code true}.
+     */
+    touchFeedback?: ?Function,
+
+    /**
+     * Color to display when clicked.
+     */
+    underlayColor?: string,
+
+    /**
+     * If this {@code AbstractContainer} is to be visible, then {@code true}
+     * or {@code false} if this instance is to be hidden or not rendered at
+     * all.
+     */
+    visible?: ?boolean
+};
+
+/**
+ * Abstract (base) class for container of React {@link Component} children with
+ * a style.
  *
  * @extends Component
  */
-export default class AbstractContainer extends Component {
+export default class AbstractContainer<P: Props> extends Component<P> {
     /**
-     * AbstractContainer component's property types.
+     * Renders this {@code AbstractContainer} as a React {@code Component} of a
+     * specific type.
      *
-     * @static
-     */
-    static propTypes = {
-        children: React.PropTypes.node,
-
-        /**
-         * The event handler/listener to be invoked when this AbstractContainer
-         * is clicked on Web or pressed on React Native. If onClick is defined
-         * and touchFeedback is undefined, touchFeedback is considered defined
-         * as true.
-         */
-        onClick: React.PropTypes.func,
-
-        /**
-         * The style (as in stylesheet) to be applied to this AbstractContainer.
-         */
-        style: React.PropTypes.object,
-
-        /**
-         * True if this instance is to provide visual feedback when touched;
-         * otherwise, false. If touchFeedback is undefined and onClick is
-         * defined, touchFeedback is considered defined as true.
-         */
-        touchFeedback: React.PropTypes.bool,
-
-        /**
-         * True if this AbstractContainer is to be visible or false if this
-         * instance is to be hidden or not rendered at all.
-         */
-        visible: React.PropTypes.bool
-    }
-
-    /**
-     * Renders this AbstractContainer as a React Component of a specific type.
-     *
-     * @param {string|ReactClass} type - The type of the React Component which
-     * is to be rendered.
-     * @param {Object|undefined} props - The read-only React Component
+     * @param {string|ReactClass} type - The type of the React {@code Component}
+     * which is to be rendered.
+     * @param {Object|undefined} props - The read-only React {@code Component}
      * properties, if any, to render. If undefined, the props of this instance
      * will be rendered.
      * @protected
      * @returns {ReactElement}
      */
-    _render(type, props) {
+    _render(type, props?: P) {
         const {
             children,
 
@@ -69,6 +94,7 @@ export default class AbstractContainer extends Component {
             ...filteredProps
         } = props || this.props;
 
+        // $FlowFixMe
         return React.createElement(type, filteredProps, children);
     }
 }

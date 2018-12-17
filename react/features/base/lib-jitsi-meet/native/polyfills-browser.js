@@ -1,6 +1,15 @@
-import Iterator from 'es6-iterator';
 import BackgroundTimer from 'react-native-background-timer';
-import 'url-polyfill'; // Polyfill for URL constructor
+import '@webcomponents/url'; // Polyfill for URL constructor
+
+import { Platform } from '../../react';
+
+// XXX The library lib-jitsi-meet utilizes window.localStorage at the time of
+// this writing and, consequently, the browser-related polyfills implemented
+// here by the feature base/lib-jitsi-meet for the purposes of the library
+// lib-jitsi-meet are incomplete without the Web Storage API! Should the library
+// lib-jitsi-meet (and its dependencies) stop utilizing window.localStorage,
+// the following import may be removed:
+import '../../storage';
 
 /**
  * Gets the first common prototype of two specified Objects (treating the
@@ -20,10 +29,9 @@ function _getCommonPrototype(a, b) {
 
     let p;
 
-    if ((p = Object.getPrototypeOf(a)) && (p = _getCommonPrototype(b, p))) {
-        return p;
-    }
-    if ((p = Object.getPrototypeOf(b)) && (p = _getCommonPrototype(a, p))) {
+    if (((p = Object.getPrototypeOf(a)) && (p = _getCommonPrototype(b, p)))
+            || ((p = Object.getPrototypeOf(b))
+                && (p = _getCommonPrototype(a, p)))) {
         return p;
     }
 
@@ -31,9 +39,10 @@ function _getCommonPrototype(a, b) {
 }
 
 /**
- * Implements an absolute minimum of the common logic of Document.querySelector
- * and Element.querySelector. Implements the most simple of selectors necessary
- * to satisfy the call sites at the time of this writing i.e. select by tagName.
+ * Implements an absolute minimum of the common logic of
+ * {@code Document.querySelector} and {@code Element.querySelector}. Implements
+ * the most simple of selectors necessary to satisfy the call sites at the time
+ * of this writing (i.e. Select by tagName).
  *
  * @param {Node} node - The Node which is the root of the tree to query.
  * @param {string} selectors - The group of CSS selectors to match on.
@@ -88,7 +97,13 @@ function _visitNode(node, callback) {
 }
 
 (global => {
-    const DOMParser = require('xmldom').DOMParser;
+    const { DOMParser } = require('xmldom');
+
+    // DOMParser
+    //
+    // Required by:
+    // - lib-jitsi-meet requires this if using WebSockets
+    global.DOMParser = DOMParser;
 
     // addEventListener
     //
@@ -99,29 +114,25 @@ function _visitNode(node, callback) {
         global.addEventListener = () => {};
     }
 
-    // Array.prototype[@@iterator]
+    // removeEventListener
     //
     // Required by:
-    // - for...of statement use(s) in lib-jitsi-meet
-    const arrayPrototype = Array.prototype;
-
-    if (typeof arrayPrototype['@@iterator'] === 'undefined') {
-        arrayPrototype['@@iterator'] = function() {
-            return new Iterator(this);
-        };
+    // - features/base/conference/middleware
+    if (typeof global.removeEventListener === 'undefined') {
+        // eslint-disable-next-line no-empty-function
+        global.removeEventListener = () => {};
     }
 
     // document
     //
     // Required by:
     // - jQuery
-    // - lib-jitsi-meet/modules/RTC/adapter.screenshare.js
     // - Strophe
     if (typeof global.document === 'undefined') {
         const document
             = new DOMParser().parseFromString(
-                    '<html><head></head><body></body></html>',
-                    'text/xml');
+                '<html><head></head><body></body></html>',
+                'text/xml');
 
         // document.addEventListener
         //
@@ -132,24 +143,42 @@ function _visitNode(node, callback) {
             document.addEventListener = () => {};
         }
 
-        // Document.querySelector
+        // document.cookie
         //
         // Required by:
-        // - strophejs-plugins/caps/strophe.caps.jsonly.js
-        const documentPrototype = Object.getPrototypeOf(document);
+        // - herment
+        if (typeof document.cookie === 'undefined') {
+            document.cookie = '';
+        }
 
-        if (documentPrototype) {
-            if (typeof documentPrototype.querySelector === 'undefined') {
-                documentPrototype.querySelector = function(selectors) {
-                    return _querySelector(this.elementNode, selectors);
-                };
-            }
+        // document.implementation.createHTMLDocument
+        //
+        // Required by:
+        // - jQuery
+        if (typeof document.implementation.createHTMLDocument === 'undefined') {
+            document.implementation.createHTMLDocument = function(title = '') {
+                const htmlDocument
+                    = new DOMParser().parseFromString(
+                        `<html>
+                            <head><title>${title}</title></head>
+                            <body></body>
+                        </html>`,
+                        'text/xml');
+
+                Object.defineProperty(htmlDocument, 'body', {
+                    get() {
+                        return htmlDocument.getElementsByTagName('body')[0];
+                    }
+                });
+
+                return htmlDocument;
+            };
         }
 
         // Element.querySelector
         //
         // Required by:
-        // - strophejs-plugins/caps/strophe.caps.jsonly.js
+        // - lib-jitsi-meet/modules/xmpp
         const elementPrototype
             = Object.getPrototypeOf(document.documentElement);
 
@@ -157,6 +186,18 @@ function _visitNode(node, callback) {
             if (typeof elementPrototype.querySelector === 'undefined') {
                 elementPrototype.querySelector = function(selectors) {
                     return _querySelector(this, selectors);
+                };
+            }
+
+            // Element.remove
+            //
+            // Required by:
+            // - lib-jitsi-meet ChatRoom#onPresence parsing
+            if (typeof elementPrototype.remove === 'undefined') {
+                elementPrototype.remove = function() {
+                    if (this.parentNode !== null) {
+                        this.parentNode.removeChild(this);
+                    }
                 };
             }
 
@@ -181,8 +222,8 @@ function _visitNode(node, callback) {
                         // Parse the content string.
                         const d
                             = new DOMParser().parseFromString(
-                                    `<div>${innerHTML}</div>`,
-                                    'text/xml');
+                                `<div>${innerHTML}</div>`,
+                                'text/xml');
 
                         // Assign the resulting nodes as children of the
                         // element.
@@ -196,11 +237,37 @@ function _visitNode(node, callback) {
                     }
                 });
             }
+
+            // Element.children
+            //
+            // Required by:
+            // - lib-jitsi-meet ChatRoom#onPresence parsing
+            if (!elementPrototype.hasOwnProperty('children')) {
+                Object.defineProperty(elementPrototype, 'children', {
+                    get() {
+                        const nodes = this.childNodes;
+                        const children = [];
+                        let i = 0;
+                        let node = nodes[i];
+
+                        while (node) {
+                            if (node.nodeType === 1) {
+                                children.push(node);
+                            }
+                            i += 1;
+                            node = nodes[i];
+                        }
+
+                        return children;
+                    }
+                });
+            }
         }
 
         // FIXME There is a weird infinite loop related to console.log and
         // Document and/or Element at the time of this writing. Work around it
         // by patching Node and/or overriding console.log.
+        const documentPrototype = Object.getPrototypeOf(document);
         const nodePrototype
             = _getCommonPrototype(documentPrototype, elementPrototype);
 
@@ -211,7 +278,7 @@ function _visitNode(node, callback) {
                 // then it doesn't sound like what expected.
                 && nodePrototype !== Object.getPrototypeOf({})) {
             // Override console.log.
-            const console = global.console;
+            const { console } = global;
 
             if (console) {
                 const loggerLevels = require('jitsi-meet-logger').levels;
@@ -224,7 +291,24 @@ function _visitNode(node, callback) {
 
                     if (typeof consoleLog === 'function') {
                         console[level] = function(...args) {
-                            const length = args.length;
+                            // XXX If console's disableYellowBox is truthy, then
+                            // react-native will not automatically display the
+                            // yellow box for the warn level. However, it will
+                            // still display the red box for the error level.
+                            // But I disable the yellow box when I don't want to
+                            // have react-native automatically show me the
+                            // console's output just like in the Release build
+                            // configuration. Because I didn't find a way to
+                            // disable the red box, downgrade the error level to
+                            // warn. The red box will still be displayed but not
+                            // for the error level.
+                            if (console.disableYellowBox && level === 'error') {
+                                console.warn(...args);
+
+                                return;
+                            }
+
+                            const { length } = args;
 
                             for (let i = 0; i < length; ++i) {
                                 let arg = args[i];
@@ -259,86 +343,49 @@ function _visitNode(node, callback) {
     // location
     if (typeof global.location === 'undefined') {
         global.location = {
-            href: ''
+            href: '',
+
+            // Required by:
+            // - lib-jitsi-meet/modules/xmpp/xmpp.js
+            search: ''
         };
     }
 
-    const navigator = global.navigator;
+    const { navigator } = global;
 
     if (navigator) {
-        // platform
-        //
-        // Required by:
-        // - lib-jitsi-meet/modules/RTC/adapter.screenshare.js
-        if (typeof navigator.platform === 'undefined') {
-            navigator.platform = '';
-        }
-
-        // plugins
-        //
-        // Required by:
-        // - lib-jitsi-meet/modules/RTC/adapter.screenshare.js
-        if (typeof navigator.plugins === 'undefined') {
-            navigator.plugins = [];
-        }
-
         // userAgent
         //
         // Required by:
-        // - lib-jitsi-meet/modules/RTC/adapter.screenshare.js
-        // - lib-jitsi-meet/modules/RTC/RTCBrowserType.js
-        (() => {
-            const reactNativePackageJSON = require('react-native/package.json');
-            let userAgent = reactNativePackageJSON.name || 'react-native';
+        // - lib-jitsi-meet/modules/browser/BrowserDetection.js
+        let userAgent = navigator.userAgent || '';
 
-            const version = reactNativePackageJSON.version;
+        // react-native/version
+        const { name, version } = require('react-native/package.json');
+        let rn = name || 'react-native';
 
-            if (version) {
-                userAgent += `/${version}`;
-            }
+        version && (rn += `/${version}`);
+        if (userAgent.indexOf(rn) === -1) {
+            userAgent = userAgent ? `${rn} ${userAgent}` : rn;
+        }
 
-            if (typeof navigator.userAgent !== 'undefined') {
-                const s = navigator.userAgent.toString();
+        // (OS version)
+        const os = `(${Platform.OS} ${Platform.Version})`;
 
-                if (s.length > 0 && s.indexOf(userAgent) === -1) {
-                    userAgent = `${s} ${userAgent}`;
-                }
-            }
+        if (userAgent.indexOf(os) === -1) {
+            userAgent = userAgent ? `${userAgent} ${os}` : os;
+        }
 
-            navigator.userAgent = userAgent;
-        })();
-    }
-
-    // performance
-    if (typeof global.performance === 'undefined') {
-        global.performance = {
-            now() {
-                return 0;
-            }
-        };
-    }
-
-    // sessionStorage
-    //
-    // Required by:
-    // - Strophe
-    if (typeof global.sessionStorage === 'undefined') {
-        global.sessionStorage = {
-            /* eslint-disable no-empty-function */
-            getItem() {},
-            removeItem() {},
-            setItem() {}
-
-            /* eslint-enable no-empty-function */
-        };
+        navigator.userAgent = userAgent;
     }
 
     // WebRTC
     require('./polyfills-webrtc');
+    require('react-native-callstats/csio-polyfill');
 
     // XMLHttpRequest
     if (global.XMLHttpRequest) {
-        const prototype = global.XMLHttpRequest.prototype;
+        const { prototype } = global.XMLHttpRequest;
 
         // XMLHttpRequest.responseXML
         //
@@ -347,17 +394,13 @@ function _visitNode(node, callback) {
         if (prototype && !prototype.hasOwnProperty('responseXML')) {
             Object.defineProperty(prototype, 'responseXML', {
                 get() {
-                    const responseText = this.responseText;
-                    let responseXML;
+                    const { responseText } = this;
 
-                    if (responseText) {
-                        responseXML
-                            = new DOMParser().parseFromString(
-                                    responseText,
-                                    'text/xml');
-                    }
-
-                    return responseXML;
+                    return (
+                        responseText
+                            && new DOMParser().parseFromString(
+                                responseText,
+                                'text/xml'));
                 }
             });
         }
@@ -372,9 +415,9 @@ function _visitNode(node, callback) {
     // Required by:
     // - lib-jitsi-meet
     // - Strophe
-    global.clearTimeout = window.clearTimeout = BackgroundTimer.clearTimeout;
-    global.clearInterval = window.clearInterval = BackgroundTimer.clearInterval;
-    global.setInterval = window.setInterval = BackgroundTimer.setInterval;
-    global.setTimeout = window.setTimeout = BackgroundTimer.setTimeout;
+    global.clearTimeout = BackgroundTimer.clearTimeout.bind(BackgroundTimer);
+    global.clearInterval = BackgroundTimer.clearInterval.bind(BackgroundTimer);
+    global.setInterval = BackgroundTimer.setInterval.bind(BackgroundTimer);
+    global.setTimeout = (fn, ms = 0) => BackgroundTimer.setTimeout(fn, ms);
 
 })(global || window || this); // eslint-disable-line no-invalid-this

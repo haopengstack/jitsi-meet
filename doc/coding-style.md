@@ -76,9 +76,18 @@
   projects. For example:
 
   * The instance of lib-jitsi-meet's `JitsiConnection` type should be named
-    `connection` or `jitsiConnection` in jitsi-meet-react, not `client`.
+    `connection` or `jitsiConnection` in jitsi-meet, not `client`.
 
   * The class `ReducerRegistry` should be defined in ReducerRegistry.js and its
     imports in other files should use the same name. Don't define the class
     `Registry` in ReducerRegistry.js and then import it as `Reducers` in other
     files.
+
+* The names of global constants (including ES6 module-global constants) should
+  be written in uppercase with underscores to separate words. For example,
+  `BACKGROUND_COLOR`.
+
+* The underscore character at the beginning of a name signals that the
+  respective variable, function, property is non-public i.e. private, protected,
+  or internal. In contrast, the lack of an underscore at the beginning of a name
+  signals public API.

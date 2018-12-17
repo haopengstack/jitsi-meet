@@ -1,49 +1,53 @@
+// @flow
+
 import React, { Component } from 'react';
-import Prompt from 'react-native-prompt';
 import { connect } from 'react-redux';
 
-import { translate } from '../../base/i18n';
+import { Dialog } from '../../base/dialog';
 
 import { endRoomLockRequest } from '../actions';
+
+/**
+ * The style of the {@link TextInput} rendered by {@code RoomLockPrompt}. As it
+ * requests the entry of a password, {@code TextInput} automatically correcting
+ * the entry of the password is a pain to deal with as a user.
+ */
+const _TEXT_INPUT_PROPS = {
+    autoCapitalize: 'none',
+    autoCorrect: false
+};
+
+/**
+ * The type of the React {@code Component} props of {@link RoomLockPrompt}.
+ */
+type Props = {
+
+    /**
+     * The JitsiConference which requires a password.
+     */
+    conference: Object,
+
+    /**
+     * Redux store dispatch function.
+     */
+    dispatch: Dispatch<*>,
+};
 
 /**
  * Implements a React Component which prompts the user for a password to lock  a
  * conference/room.
  */
-class RoomLockPrompt extends Component {
-    /**
-     * RoomLockPrompt component's property types.
-     *
-     * @static
-     */
-    static propTypes = {
-        /**
-         * The JitsiConference which requires a password.
-         *
-         * @type {JitsiConference}
-         */
-        conference: React.PropTypes.object,
-        dispatch: React.PropTypes.func,
-
-        /**
-         * The function to translate human-readable text.
-         *
-         * @public
-         * @type {Function}
-         */
-        t: React.PropTypes.func
-    }
-
+class RoomLockPrompt extends Component<Props> {
     /**
      * Initializes a new RoomLockPrompt instance.
      *
-     * @param {Object} props - The read-only properties with which the new
+     * @param {Props} props - The read-only properties with which the new
      * instance is to be initialized.
      */
     constructor(props) {
         super(props);
 
-        // Bind event handlers so they are only bound once for every instance.
+        // Bind event handlers so they are only bound once per instance.
         this._onCancel = this._onCancel.bind(this);
         this._onSubmit = this._onSubmit.bind(this);
     }
@@ -55,41 +59,47 @@ class RoomLockPrompt extends Component {
      * @returns {ReactElement}
      */
     render() {
-        const { t } = this.props;
-
         return (
-            <Prompt
+            <Dialog
+                bodyKey = 'dialog.passwordLabel'
                 onCancel = { this._onCancel }
                 onSubmit = { this._onSubmit }
-                placeholder = { t('dialog.passwordLabel') }
-                title = { t('toolbar.lock') }
-                visible = { true } />
+                textInputProps = { _TEXT_INPUT_PROPS }
+                titleKey = 'dialog.lockRoom' />
         );
     }
+
+    _onCancel: () => boolean;
 
     /**
      * Notifies this prompt that it has been dismissed by cancel.
      *
      * @private
-     * @returns {void}
+     * @returns {boolean} True to hide this dialog/prompt; otherwise, false.
      */
     _onCancel() {
         // An undefined password is understood to cancel the request to lock the
         // conference/room.
-        this._onSubmit(undefined);
+        return this._onSubmit(undefined);
     }
+
+    _onSubmit: (?string) => boolean;
 
     /**
      * Notifies this prompt that it has been dismissed by submitting a specific
      * value.
      *
-     * @param {string} value - The submitted value.
+     * @param {string|undefined} value - The submitted value.
      * @private
-     * @returns {void}
+     * @returns {boolean} False because we do not want to hide this
+     * dialog/prompt as the hiding will be handled inside endRoomLockRequest
+     * after setting the password is resolved.
      */
-    _onSubmit(value) {
+    _onSubmit(value: ?string) {
         this.props.dispatch(endRoomLockRequest(this.props.conference, value));
+
+        return false; // Do not hide.
     }
 }
 
-export default translate(connect()(RoomLockPrompt));
+export default connect()(RoomLockPrompt);

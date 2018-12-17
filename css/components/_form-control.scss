@@ -1,5 +1,5 @@
 .form-control {
-    padding: 16px 0;
+    padding: $formPadding 0;
 
     &:first-child {
         padding-top: 0;
@@ -21,19 +21,6 @@
 
     &__em {
         color: $inputControlEmColor;
-    }
-
-    &__hint {
-        margin-top: 0;
-        font-size: $hintFontSize;
-
-        span {
-            vertical-align: middle;
-        }
-
-        &_error {
-            color: $errorColor;
-        }
     }
 
     &__container {

@@ -1,144 +1,74 @@
-import { CONFERENCE_FAILED } from '../base/conference';
-import {
-    CONNECTION_ESTABLISHED,
-    CONNECTION_FAILED
-} from '../base/connection';
-import {
-    isFatalJitsiConnectionError,
-    JitsiConferenceErrors,
-    JitsiConnectionErrors
-} from '../base/lib-jitsi-meet';
-import {
-    ReducerRegistry,
-    setStateProperties,
-    setStateProperty
-} from '../base/redux';
+// @flow
+
+import { assign, ReducerRegistry, set } from '../base/redux';
 
 import {
     MEDIA_PERMISSION_PROMPT_VISIBILITY_CHANGED,
+    SET_FATAL_ERROR,
     SUSPEND_DETECTED
 } from './actionTypes';
 
-const logger = require('jitsi-meet-logger').getLogger(__filename);
-
 /**
- * Reduces the Redux actions of the feature overlay.
+ * Reduces the redux actions of the feature overlay.
+ *
+ * FIXME: these pieces of state should probably be in a different place.
  */
-ReducerRegistry.register('features/overlay', (state = {}, action) => {
+ReducerRegistry.register('features/overlay', (state = { }, action) => {
     switch (action.type) {
-    case CONFERENCE_FAILED:
-        return _conferenceFailed(state, action);
-
-    case CONNECTION_ESTABLISHED:
-        return _connectionEstablished(state, action);
-
-    case CONNECTION_FAILED:
-        return _connectionFailed(state, action);
-
     case MEDIA_PERMISSION_PROMPT_VISIBILITY_CHANGED:
         return _mediaPermissionPromptVisibilityChanged(state, action);
 
+    case SET_FATAL_ERROR:
+        return _setFatalError(state, action);
+
     case SUSPEND_DETECTED:
-        return _suspendDetected(state, action);
+        return _suspendDetected(state);
     }
 
     return state;
 });
 
 /**
- * Reduces a specific Redux action CONFERENCE_FAILED of the feature overlay.
- *
- * @param {Object} state - The Redux state of the feature overlay.
- * @param {Action} action - The Redux action CONFERENCE_FAILED to reduce.
- * @returns {Object} The new state of the feature overlay after the reduction of
- * the specified action.
- * @private
- */
-function _conferenceFailed(state, action) {
-    const error = action.error;
-
-    if (error === JitsiConferenceErrors.FOCUS_LEFT
-            || error === JitsiConferenceErrors.VIDEOBRIDGE_NOT_AVAILABLE) {
-        return setStateProperties(state, {
-            haveToReload: true,
-            isNetworkFailure: false,
-            reason: action.errorMessage
-        });
-    }
-
-    return state;
-}
-
-/**
- * Reduces a specific Redux action CONNECTION_ESTABLISHED of the feature
- * overlay.
- *
- * @param {Object} state - The Redux state of the feature overlay.
- * @returns {Object} The new state of the feature overlay after the reduction of
- * the specified action.
- * @private
- */
-function _connectionEstablished(state) {
-    return setStateProperty(state, 'connectionEstablished', true);
-}
-
-/**
- * Reduces a specific Redux action CONNECTION_FAILED of the feature overlay.
- *
- * @param {Object} state - The Redux state of the feature overlay.
- * @param {Action} action - The Redux action CONNECTION_FAILED to reduce.
- * @returns {Object} The new state of the feature overlay after the reduction of
- * the specified action.
- * @private
- */
-function _connectionFailed(state, action) {
-    const error = action.error;
-
-    if (isFatalJitsiConnectionError(error)) {
-        const errorMessage = action.errorMessage;
-
-        logger.error(`XMPP connection error: ${errorMessage}`);
-
-        return setStateProperties(state, {
-            haveToReload: true,
-
-
-            // From all of the cases above only CONNECTION_DROPPED_ERROR is
-            // considered a network type of failure.
-            isNetworkFailure:
-                error === JitsiConnectionErrors.CONNECTION_DROPPED_ERROR,
-            reason: `xmpp-conn-dropped: ${errorMessage}`
-        });
-    }
-
-    return state;
-}
-
-/**
- * Reduces a specific Redux action MEDIA_PERMISSION_PROMPT_VISIBILITY_CHANGED of
+ * Reduces a specific redux action MEDIA_PERMISSION_PROMPT_VISIBILITY_CHANGED of
  * the feature overlay.
  *
- * @param {Object} state - The Redux state of the feature overlay.
- * @param {Action} action - The Redux action to reduce.
+ * @param {Object} state - The redux state of the feature overlay.
+ * @param {Action} action - The redux action to reduce.
+ * @private
  * @returns {Object} The new state of the feature overlay after the reduction of
  * the specified action.
- * @private
  */
-function _mediaPermissionPromptVisibilityChanged(state, action) {
-    return setStateProperties(state, {
-        browser: action.browser,
-        isMediaPermissionPromptVisible: action.isVisible
+function _mediaPermissionPromptVisibilityChanged(
+        state,
+        { browser, isVisible }) {
+    return assign(state, {
+        browser,
+        isMediaPermissionPromptVisible: isVisible
     });
 }
 
 /**
- * Reduces a specific Redux action SUSPEND_DETECTED of the feature overlay.
+ * Reduces a specific redux action SUSPEND_DETECTED of the feature overlay.
  *
- * @param {Object} state - The Redux state of the feature overlay.
+ * @param {Object} state - The redux state of the feature overlay.
+ * @private
  * @returns {Object} The new state of the feature overlay after the reduction of
  * the specified action.
- * @private
  */
 function _suspendDetected(state) {
-    return setStateProperty(state, 'suspendDetected', true);
+    return set(state, 'suspendDetected', true);
+}
+
+/**
+ * Reduces a specific redux action {@code SET_FATAL_ERROR} of the feature
+ * overlay.
+ *
+ * @param {Object} state - The redux state of the feature overlay.
+ * @param {Error} fatalError - If the value is set it indicates that a fatal
+ * error has occurred and that the reload screen is to be displayed.
+ * @returns {Object}
+ * @private
+ */
+function _setFatalError(state, { fatalError }) {
+    return set(state, 'fatalError', fatalError);
 }

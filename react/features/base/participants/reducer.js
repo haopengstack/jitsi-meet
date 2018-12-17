@@ -1,6 +1,7 @@
-/* global MD5 */
+// @flow
 
-import { ReducerRegistry, setStateProperty } from '../redux';
+import { ReducerRegistry, set } from '../redux';
+import { randomHexString } from '../util';
 
 import {
     DOMINANT_SPEAKER_CHANGED,
@@ -10,10 +11,7 @@ import {
     PARTICIPANT_UPDATED,
     PIN_PARTICIPANT
 } from './actionTypes';
-import {
-    LOCAL_PARTICIPANT_DEFAULT_ID,
-    PARTICIPANT_ROLE
-} from './constants';
+import { LOCAL_PARTICIPANT_DEFAULT_ID, PARTICIPANT_ROLE } from './constants';
 
 /**
  * Participant object.
@@ -26,112 +24,32 @@ import {
  * @property {boolean} pinned - If true, participant is currently a
  * "PINNED_ENDPOINT".
  * @property {boolean} dominantSpeaker - If this participant is the dominant
- * speaker in the (associated) conference, <tt>true</tt>; otherwise,
- * <tt>false</tt>.
+ * speaker in the (associated) conference, {@code true}; otherwise,
+ * {@code false}.
  * @property {string} email - Participant email.
  */
 
+declare var APP: Object;
+
 /**
- * These properties should not be bulk assigned when updating a particular
- * @see Participant.
+ * The participant properties which cannot be updated through
+ * {@link PARTICIPANT_UPDATED}. They either identify the participant or can only
+ * be modified through property-dedicated actions.
+ *
  * @type {string[]}
  */
-const PARTICIPANT_PROPS_TO_OMIT_WHEN_UPDATE
-    = [ 'dominantSpeaker', 'id', 'local', 'pinned' ];
+const PARTICIPANT_PROPS_TO_OMIT_WHEN_UPDATE = [
 
-/**
- * Reducer function for a single participant.
- *
- * @param {Participant|undefined} state - Participant to be modified.
- * @param {Object} action - Action object.
- * @param {string} action.type - Type of action.
- * @param {Participant} action.participant - Information about participant to be
- * added/modified.
- * @param {JitsiConference} action.conference - Conference instance.
- * @private
- * @returns {Participant|undefined}
- */
-function _participant(state, action) {
-    switch (action.type) {
-    case DOMINANT_SPEAKER_CHANGED:
-        // Only one dominant speaker is allowed.
-        return (
-            setStateProperty(
-                    state,
-                    'dominantSpeaker',
-                    state.id === action.participant.id));
+    // The following properties identify the participant:
+    'conference',
+    'id',
+    'local',
 
-    case PARTICIPANT_ID_CHANGED:
-        if (state.id === action.oldValue) {
-            const id = action.newValue;
-
-            return {
-                ...state,
-                id,
-                avatar: state.avatar || _getAvatarURL(id, state.email)
-            };
-        }
-        break;
-
-    case PARTICIPANT_JOINED: {
-        const participant = action.participant; // eslint-disable-line no-shadow
-        // XXX The situation of not having an ID for a remote participant should
-        // not happen. Maybe we should raise an error in this case or generate a
-        // random ID.
-        const id
-            = participant.id
-                || (participant.local && LOCAL_PARTICIPANT_DEFAULT_ID);
-        const avatar
-            = participant.avatar || _getAvatarURL(id, participant.email);
-
-        // TODO Get these names from config/localized.
-        const name
-            = participant.name || (participant.local ? 'me' : 'Fellow Jitster');
-
-        return {
-            avatar,
-            email: participant.email,
-            id,
-            local: participant.local || false,
-            name,
-            pinned: participant.pinned || false,
-            role: participant.role || PARTICIPANT_ROLE.NONE,
-            dominantSpeaker: participant.dominantSpeaker || false
-        };
-    }
-
-    case PARTICIPANT_UPDATED:
-        if (state.id === action.participant.id) {
-            const newState = { ...state };
-
-            for (const key in action.participant) {
-                if (action.participant.hasOwnProperty(key)
-                        && PARTICIPANT_PROPS_TO_OMIT_WHEN_UPDATE.indexOf(key)
-                            === -1) {
-                    newState[key] = action.participant[key];
-                }
-            }
-
-            if (!newState.avatar) {
-                newState.avatar
-                    = _getAvatarURL(action.participant.id, newState.email);
-            }
-
-            return newState;
-        }
-        break;
-
-    case PIN_PARTICIPANT:
-        // Currently, only one pinned participant is allowed.
-        return (
-            setStateProperty(
-                    state,
-                    'pinned',
-                    state.id === action.participant.id));
-    }
-
-    return state;
-}
+    // The following properties can only be modified through property-dedicated
+    // actions:
+    'dominantSpeaker',
+    'pinned'
+];
 
 /**
  * Listen for actions which add, remove, or update the set of participants in
@@ -146,59 +64,166 @@ function _participant(state, action) {
  */
 ReducerRegistry.register('features/base/participants', (state = [], action) => {
     switch (action.type) {
-    case PARTICIPANT_JOINED:
-        return [ ...state, _participant(undefined, action) ];
-
-    case PARTICIPANT_LEFT:
-        return state.filter(p => p.id !== action.participant.id);
-
     case DOMINANT_SPEAKER_CHANGED:
     case PARTICIPANT_ID_CHANGED:
     case PARTICIPANT_UPDATED:
     case PIN_PARTICIPANT:
         return state.map(p => _participant(p, action));
 
-    default:
-        return state;
+    case PARTICIPANT_JOINED:
+        return [ ...state, _participantJoined(action) ];
+
+    case PARTICIPANT_LEFT: {
+        // XXX A remote participant is uniquely identified by their id in a
+        // specific JitsiConference instance. The local participant is uniquely
+        // identified by the very fact that there is only one local participant
+        // (and the fact that the local participant "joins" at the beginning of
+        // the app and "leaves" at the end of the app).
+        const { conference, id } = action.participant;
+
+        return state.filter(p =>
+            !(
+                p.id === id
+
+                    // XXX Do not allow collisions in the IDs of the local
+                    // participant and a remote participant cause the removal of
+                    // the local participant when the remote participant's
+                    // removal is requested.
+                    && p.conference === conference
+                    && (conference || p.local)));
     }
+    }
+
+    return state;
 });
 
 /**
- * Returns the URL of the image for the avatar of a particular participant
- * identified by their id and/or e-mail address.
+ * Reducer function for a single participant.
  *
- * @param {string} participantId - Participant's id.
- * @param {string} [email] - Participant's email.
- * @returns {string} The URL of the image for the avatar of the participant
- * identified by the specified participantId and/or email.
+ * @param {Participant|undefined} state - Participant to be modified.
+ * @param {Object} action - Action object.
+ * @param {string} action.type - Type of action.
+ * @param {Participant} action.participant - Information about participant to be
+ * added/modified.
+ * @param {JitsiConference} action.conference - Conference instance.
+ * @private
+ * @returns {Participant}
  */
-function _getAvatarURL(participantId, email) {
-    // TODO: Use disableThirdPartyRequests config.
+function _participant(state: Object = {}, action) {
+    switch (action.type) {
+    case DOMINANT_SPEAKER_CHANGED:
+        // Only one dominant speaker is allowed.
+        return (
+            set(state, 'dominantSpeaker', state.id === action.participant.id));
 
-    let avatarId = email || participantId;
+    case PARTICIPANT_ID_CHANGED: {
+        // A participant is identified by an id-conference pair. Only the local
+        // participant is with an undefined conference.
+        const { conference } = action;
 
-    // If the ID looks like an email, we'll use gravatar. Otherwise, it's a
-    // random avatar and we'll use the configured URL.
-    const random = !avatarId || avatarId.indexOf('@') < 0;
-
-    if (!avatarId) {
-        avatarId = participantId;
+        if (state.id === action.oldValue
+                && state.conference === conference
+                && (conference || state.local)) {
+            return {
+                ...state,
+                id: action.newValue
+            };
+        }
+        break;
     }
 
-    // MD5 is provided by Strophe
-    avatarId = MD5.hexdigest(avatarId.trim().toLowerCase());
+    case PARTICIPANT_UPDATED: {
+        const { participant } = action; // eslint-disable-line no-shadow
+        let { id } = participant;
+        const { local } = participant;
 
-    let urlPref = null;
-    let urlSuf = null;
+        if (!id && local) {
+            id = LOCAL_PARTICIPANT_DEFAULT_ID;
+        }
 
-    if (random) {
-        // TODO: Use RANDOM_AVATAR_URL_PREFIX from interface config.
-        urlPref = 'https://robohash.org/';
-        urlSuf = '.png?size=200x200';
-    } else {
-        urlPref = 'https://www.gravatar.com/avatar/';
-        urlSuf = '?d=wavatar&size=200';
+        if (state.id === id) {
+            const newState = { ...state };
+
+            for (const key in participant) {
+                if (participant.hasOwnProperty(key)
+                        && PARTICIPANT_PROPS_TO_OMIT_WHEN_UPDATE.indexOf(key)
+                            === -1) {
+                    newState[key] = participant[key];
+                }
+            }
+
+            return newState;
+        }
+        break;
     }
 
-    return urlPref + avatarId + urlSuf;
+    case PIN_PARTICIPANT:
+        // Currently, only one pinned participant is allowed.
+        return set(state, 'pinned', state.id === action.participant.id);
+    }
+
+    return state;
+}
+
+/**
+ * Reduces a specific redux action of type {@link PARTICIPANT_JOINED} in the
+ * feature base/participants.
+ *
+ * @param {Action} action - The redux action of type {@code PARTICIPANT_JOINED}
+ * to reduce.
+ * @private
+ * @returns {Object} The new participant derived from the payload of the
+ * specified {@code action} to be added into the redux state of the feature
+ * base/participants after the reduction of the specified
+ * {@code action}.
+ */
+function _participantJoined({ participant }) {
+    const {
+        avatarURL,
+        botType,
+        connectionStatus,
+        dominantSpeaker,
+        email,
+        isFakeParticipant,
+        local,
+        name,
+        pinned,
+        presence,
+        role
+    } = participant;
+    let { avatarID, conference, id } = participant;
+
+    if (local) {
+        // avatarID
+        //
+        // TODO Get the avatarID of the local participant from localStorage.
+        avatarID || (avatarID = randomHexString(32));
+
+        // conference
+        //
+        // XXX The local participant is not identified in association with a
+        // JitsiConference because it is identified by the very fact that it is
+        // the local participant.
+        conference = undefined;
+
+        // id
+        id || (id = LOCAL_PARTICIPANT_DEFAULT_ID);
+    }
+
+    return {
+        avatarID,
+        avatarURL,
+        botType,
+        conference,
+        connectionStatus,
+        dominantSpeaker: dominantSpeaker || false,
+        email,
+        id,
+        isFakeParticipant,
+        local: local || false,
+        name,
+        pinned: pinned || false,
+        presence,
+        role: role || PARTICIPANT_ROLE.NONE
+    };
 }

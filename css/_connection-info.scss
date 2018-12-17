@@ -1,8 +1,6 @@
 %connection-info {
-    text-align: left;
     font-size: 12px;
     font-weight: 400;
-    color: $popoverFontColor;
 
     td {
         padding: 2px 0;
@@ -11,10 +9,13 @@
 
 .connection-info
 {
-    float: left;
-    padding: 5px;
-    padding-left: 0;
     @extend %connection-info;
+
+    /**
+     * Apply negative margin to reduce the appearance of padding in AtlasKit
+     * InlineDialog.
+     */
+    margin: -15px;
 
     > table {
         white-space: nowrap;
@@ -32,12 +33,22 @@
     &__download
     {
         @extend .connection-info__icon;
-        color: $downloadConnectionIconColor;
+    }
+
+    &__status
+    {
+        font-weight: bold;
     }
 
     &__upload
     {
         @extend .connection-info__icon;
-        color: $uploadConnectionIconColor;
+    }
+
+    .showmore {
+        display: block;
+        margin: 10px auto;
+        text-align: center;
+        width: 90px;
     }
 }

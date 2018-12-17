@@ -1,22 +1,45 @@
-import { createStyleSheet } from '../../styles';
+import { BoxModel, ColorPalette, createStyleSheet } from '../../styles';
 
 /**
- * The style of the avatar and participant view UI (components).
+ * The styles of the feature base/participants.
  */
-export const styles = createStyleSheet({
+export default createStyleSheet({
     /**
-     * Avatar style.
+     * The style of the avatar of the participant.
      */
     avatar: {
-        flex: 1,
-        width: '100%'
+        alignSelf: 'center',
+        flex: 0
     },
 
     /**
-     * ParticipantView style.
+     * Style for the text rendered when there is a connectivity problem.
+     */
+    connectionInfoText: {
+        color: ColorPalette.white,
+        fontSize: 12,
+        marginVertical: BoxModel.margin,
+        marginHorizontal: BoxModel.margin,
+        textAlign: 'center'
+    },
+
+    /**
+     * Style for the container of the text rendered when there is a
+     * connectivity problem.
+     */
+    connectionInfoContainer: {
+        alignSelf: 'center',
+        backgroundColor: ColorPalette.darkGrey,
+        borderRadius: 20,
+        marginTop: BoxModel.margin
+    },
+
+    /**
+     * {@code ParticipantView} style.
      */
     participantView: {
         alignItems: 'stretch',
-        flex: 1
+        flex: 1,
+        justifyContent: 'center'
     }
 });
